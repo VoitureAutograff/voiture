@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://voiture.in/sitemap.xml
+
+# Crawl-delay
+Crawl-delay: 1
+
+# Disallow admin and private areas
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /auth/
+Disallow: /api/
+
+# Allow important pages
+Allow: /
+Allow: /vehicles/
+Allow: /contact-support
