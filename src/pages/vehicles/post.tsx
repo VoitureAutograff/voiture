@@ -1110,7 +1110,7 @@ export default function PostVehicle() {
                         onChange={e => handleInputChange('duplicate_key', e.target.checked)}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="text-sm text-gray-700">Duplicate Key Available</span>
+                      <span className="text-sm text-gray-700">Second Key Available</span>
                     </label>
 
                     <label className="flex items-center space-x-2 cursor-pointer">
