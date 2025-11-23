@@ -63,7 +63,7 @@ export default function Header() {
             <img 
               src="https://static.readdy.ai/image/02fae2dc1f09ff057a6d421cf0d8e42d/74c49d58028519ef85759f1bff88ebee.jfif" 
               alt="Voiture.in" 
-              className="h-7 sm:h-8 lg:h-10 w-auto object-contain"
+              className="h-10 sm:h-12 lg:h-15 w-auto object-contain"
             />
           </Link>
 
