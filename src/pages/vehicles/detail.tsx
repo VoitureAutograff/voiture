@@ -786,7 +786,7 @@ Please help me with the loan process and required documentation.`
                       {vehicle.duplicate_key && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">
                           <i className="ri-key-line mr-1"></i>
-                          Duplicate Key Available
+                          Second Key Available
                         </span>
                       )}
                       {vehicle.loan_available && (
