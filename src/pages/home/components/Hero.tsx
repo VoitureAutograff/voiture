@@ -12,7 +12,7 @@ export default function Hero({ onPostRequirement }: HeroProps) {
     <div 
       className="relative min-h-screen bg-cover bg-center bg-no-repeat flex items-center"
       style={{
-        backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url('https://readdy.ai/api/search-image?query=Modern%20luxury%20car%20showroom%20with%20premium%20vehicles%20displayed%20in%20bright%20lighting%2C%20sleek%20automotive%20dealership%20interior%2C%20professional%20photography%2C%20clean%20minimalist%20design%2C%20glass%20windows%2C%20contemporary%20architecture&width=1920&height=1080&seq=hero_bg&orientation=landscape')`
+        backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url('https://i.ibb.co/vCc9HpW8/Gemini-Generated-Image-3gp5pc3gp5pc3gp5.png')`
       }}
     >
       <div className="w-full px-4 sm:px-6 lg:px-8">
