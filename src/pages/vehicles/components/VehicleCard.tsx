@@ -15,6 +15,8 @@ interface Vehicle {
   location: string | null;
   images: string[] | null;
   fuel_type: string | null;
+  num_owners?: number | null;
+  registration_year?: number | null;
   transmission: string | null;
   vehicle_type: 'car' | 'bike';
   created_at: string;
@@ -41,13 +43,15 @@ export default function VehicleCard({ vehicle }: VehicleCardProps) {
           .select('id')
           .eq('user_id', user.id)
           .eq('vehicle_id', vehicle.id)
-          .single();
+          .limit(1);
 
-        if (!error && data) {
+        if (!error && Array.isArray(data) && data.length > 0) {
           setIsFavorited(true);
+        } else {
+          setIsFavorited(false);
         }
-      } catch (error) {
-        // Not favorited
+      } catch (err) {
+        console.error('Error checking favorite status:', err);
         setIsFavorited(false);
       }
     };
@@ -201,6 +205,29 @@ export default function VehicleCard({ vehicle }: VehicleCardProps) {
           </div>
         )}
 
+        {/* Owners & Registration */}
+        {(vehicle.num_owners || vehicle.registration_year) && (
+          <div className="flex items-center space-x-3 text-xs sm:text-sm text-gray-600 mt-1">
+            {vehicle.num_owners !== undefined && vehicle.num_owners !== null && (
+              <span className="flex items-center space-x-1">
+                <i className="ri-user-line text-xs sm:text-sm"></i>
+                <span>{vehicle.num_owners} Owner{vehicle.num_owners > 1 ? 's' : ''}</span>
+              </span>
+            )}
+
+            {vehicle.num_owners && vehicle.registration_year && <span className="text-gray-300"></span>}
+
+            {vehicle.registration_year && (
+              <span className="flex items-center space-x-1">
+                {/* show re-registered if registration_year > manufacture year */}
+                <i className="ri-refresh-line text-xs sm:text-sm"></i>
+                <span>
+                  {vehicle.registration_year > vehicle.year ? 'Re-registered' : `Regd ${vehicle.registration_year}`}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
         {/* Location */}
         {vehicle.location && (
           <div className="flex items-center space-x-1 text-xs sm:text-sm text-gray-600">
