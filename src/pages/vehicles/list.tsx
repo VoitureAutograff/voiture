@@ -48,7 +48,7 @@ export default function VehicleList() {
     search: '',
     vehicleType: 'all',
     make: 'all',
-    priceRange: [0, 100000000],
+    priceRange: [0, 150000000],
     yearRange: [1990, new Date().getFullYear()],
     location: '',
     fuelType: 'all',
@@ -74,7 +74,7 @@ export default function VehicleList() {
 
       // Parse price range
       let priceMin = 0
-      let priceMax = 100000000
+      let priceMax = 150000000
       if (urlPriceRange) {
         if (urlPriceRange.includes('-')) {
           const [min, max] = urlPriceRange.split('-').map(p => parseInt(p))
@@ -82,7 +82,7 @@ export default function VehicleList() {
           priceMax = max
         } else if (urlPriceRange.includes('+')) {
           priceMin = parseInt(urlPriceRange.replace('+', ''))
-          priceMax = 100000000
+          priceMax = 150000000
         }
       }
 
@@ -202,7 +202,7 @@ export default function VehicleList() {
       search: '',
       vehicleType: 'all',
       make: 'all',
-      priceRange: [0, 100000000] as [number, number],
+      priceRange: [0, 150000000] as [number, number],
       yearRange: [1990, new Date().getFullYear()] as [number, number],
       location: '',
       fuelType: 'all',
@@ -398,7 +398,7 @@ export default function VehicleList() {
                         search: newFilters.search || '',
                         vehicleType: newFilters.vehicleType || 'all',
                         make: newFilters.make || 'all',
-                        priceRange: [newFilters.priceMin || 0, newFilters.priceMax || 100000000],
+                        priceRange: [newFilters.priceMin || 0, newFilters.priceMax || 150000000],
                         yearRange: [newFilters.yearFrom || 1990, newFilters.yearTo || new Date().getFullYear()],
                         location: filters.location,
                         fuelType: newFilters.fuelType || 'all',
