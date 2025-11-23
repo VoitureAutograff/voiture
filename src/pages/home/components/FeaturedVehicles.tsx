@@ -1,7 +1,8 @@
 
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../hooks/useAuth';
 
 interface Vehicle {
   id: string;
@@ -14,6 +15,9 @@ interface Vehicle {
   location: string | null;
   mileage: number | null;
   fuel_type: string | null;
+  transmission?: string | null;
+  num_owners?: number | null;
+  registration_year?: number | null;
   premium: boolean;
 }
 
@@ -21,11 +25,43 @@ export default function FeaturedVehicles() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favLoadingId, setFavLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchVehicles();
   }, []);
 
+  useEffect(() => {
+    // fetch user's favorites when authenticated
+    const fetchFavorites = async () => {
+      if (!user) {
+        setFavorites(new Set());
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('favorites')
+          .select('vehicle_id')
+          .eq('user_id', user.id);
+
+        if (error) {
+          console.error('Error fetching favorites:', error);
+          return;
+        }
+
+        const favSet = new Set<string>((data || []).map((r: any) => r.vehicle_id));
+        setFavorites(favSet);
+      } catch (err) {
+        console.error('Error fetching favorites:', err);
+      }
+    };
+
+    fetchFavorites();
+  }, [user]);
   const fetchVehicles = async () => {
     try {
       setLoading(true);
@@ -44,6 +80,9 @@ export default function FeaturedVehicles() {
           location,
           mileage,
           fuel_type,
+          transmission,
+          num_owners,
+          registration_year,
           premium
         `)
         .eq('status', 'active')
@@ -63,6 +102,48 @@ export default function FeaturedVehicles() {
     }
   };
 
+  const handleFavorite = async (e: React.MouseEvent, vehicleId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    setFavLoadingId(vehicleId);
+    try {
+      const isFav = favorites.has(vehicleId);
+
+      if (isFav) {
+        const { error } = await supabase
+          .from('favorites')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('vehicle_id', vehicleId);
+
+        if (error) throw error;
+
+        const next = new Set(favorites);
+        next.delete(vehicleId);
+        setFavorites(next);
+      } else {
+        const { error } = await supabase
+          .from('favorites')
+          .insert({ user_id: user.id, vehicle_id: vehicleId });
+
+        if (error) throw error;
+
+        const next = new Set(favorites);
+        next.add(vehicleId);
+        setFavorites(next);
+      }
+    } catch (err: any) {
+      console.error('Error toggling favorite:', err);
+    } finally {
+      setFavLoadingId(null);
+    }
+  };
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -174,6 +255,17 @@ export default function FeaturedVehicles() {
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   )}
+                  {/* Favorite Button */}
+                  <button
+                    onClick={(e) => handleFavorite(e, vehicle.id)}
+                    disabled={favLoadingId === vehicle.id}
+                    className={`absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 ${
+                      favorites.has(vehicle.id) ? 'bg-red-500 text-white' : 'bg-white/80 text-gray-600 hover:bg-white hover:text-red-500'
+                    } ${favLoadingId === vehicle.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    aria-label={favorites.has(vehicle.id) ? 'Remove from favorites' : 'Save to favorites'}
+                  >
+                    <i className={`${favorites.has(vehicle.id) ? 'ri-heart-fill' : 'ri-heart-line'} text-sm`}></i>
+                  </button>
                   {vehicle.premium && (
                     <div className="absolute top-4 left-4">
                       <span className="bg-gradient-to-r from-yellow-400 to-yellow-600 text-white px-3 py-1 rounded-full text-sm font-semibold flex items-center">
@@ -214,6 +306,30 @@ export default function FeaturedVehicles() {
                       </div>
                     )}
 
+                    {(vehicle.transmission || vehicle.num_owners || vehicle.registration_year) && (
+                      <div className="flex items-center text-gray-600 text-sm mt-1 space-x-4">
+                        {vehicle.transmission && (
+                          <div className="flex items-center">
+                            <i className="ri-settings-3-line mr-2 w-4 h-4 flex items-center justify-center"></i>
+                            <span className="capitalize">{vehicle.transmission}</span>
+                          </div>
+                        )}
+
+                        {vehicle.num_owners !== undefined && vehicle.num_owners !== null && (
+                          <div className="flex items-center">
+                            <i className="ri-user-line mr-2 w-4 h-4 flex items-center justify-center"></i>
+                            <span>{vehicle.num_owners} Owner{vehicle.num_owners > 1 ? 's' : ''}</span>
+                          </div>
+                        )}
+
+                        {vehicle.registration_year && (
+                          <div className="flex items-center">
+                            <i className="ri-refresh-line mr-2 w-4 h-4 flex items-center justify-center"></i>
+                            <span>{vehicle.registration_year > vehicle.year ? 'Re-registered' : `Regd ${vehicle.registration_year}`}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {vehicle.location && (
                       <div className="flex items-center text-gray-600 text-sm">
                         <i className="ri-map-pin-line mr-2 w-4 h-4 flex items-center justify-center"></i>
