@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 export default function SearchFilters() {
   const navigate = useNavigate();
   const [vehicleType, setVehicleType] = useState('all');
+  const [brand, setBrand] = useState('');
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -240,11 +241,11 @@ export default function SearchFilters() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by vehicle name, model, features, or any specific details..."
+              placeholder="Search by vehicle name"
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Example: "Swift Dzire", "automatic transmission", "sunroof", "diesel engine"
+              Example: "benz" , "bmw" , "audi" , "mercedes" , "toyota" 
             </p>
           </div>
         </div>
