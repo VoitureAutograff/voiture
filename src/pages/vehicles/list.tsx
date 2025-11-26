@@ -24,14 +24,15 @@ interface Vehicle {
 }
 
 interface Filters {
-  search: string;
-  vehicleType: string;
-  make: string;
+  search?: string;
+  vehicleType?: string;
+  make?: string;
+  model?: string;  
   priceRange: [number, number];
   yearRange: [number, number];
   location: string;
-  fuelType: string;
-  transmission: string;
+  fuelType?: string;
+  transmission?: string;
 }
 
 export default function VehicleList() {
@@ -45,15 +46,10 @@ export default function VehicleList() {
   const [dataLoaded, setDataLoaded] = useState(false)
   const [initialFiltersApplied, setInitialFiltersApplied] = useState(false)
   const [filters, setFilters] = useState<Filters>({
-    search: '',
-    vehicleType: 'all',
-    make: 'all',
-    priceRange: [0, 150000000],
-    yearRange: [1990, new Date().getFullYear()],
-    location: '',
-    fuelType: 'all',
-    transmission: 'all'
-  })
+  priceRange: [0, 150000000],
+  yearRange: [1990, new Date().getFullYear()],
+  location: ''
+})
 
   const totalCount = filteredVehicles.length
 
@@ -69,6 +65,7 @@ export default function VehicleList() {
     if (dataLoaded && !initialFiltersApplied) {
       const urlVehicleType = searchParams.get('vehicleType') || 'all'
       const urlMake = searchParams.get('make') || 'all'
+      const urlModel = searchParams.get('model') || 'all'
       const urlPriceRange = searchParams.get('priceRange') || ''
       const urlSearch = searchParams.get('search') || ''
 
@@ -88,19 +85,96 @@ export default function VehicleList() {
 
       // Apply filters
       handleFilter({
-        search: urlSearch,
-        vehicleType: urlVehicleType,
-        make: urlMake,
+        search: urlSearch || undefined,
+        vehicleType: urlVehicleType === 'all' ? undefined : urlVehicleType,
+        make: urlMake === 'all' ? undefined : urlMake,
+        model: urlModel === 'all' ? undefined : urlModel,
         priceRange: [priceMin, priceMax],
         yearRange: [1990, new Date().getFullYear()],
         location: '',
-        fuelType: 'all',
-        transmission: 'all'
+        fuelType: undefined,
+        transmission: undefined
       })
 
       setInitialFiltersApplied(true)
     }
   }, [dataLoaded, initialFiltersApplied, searchParams])
+
+  // Apply filters whenever they change (but not on initial load)
+  useEffect(() => {
+    if (dataLoaded && initialFiltersApplied) {
+      // Apply filters
+      let filtered = [...vehicles];
+
+      // Apply search filter
+      if (filters.search) {
+        const searchTerm = filters.search.toLowerCase();
+        filtered = filtered.filter(
+          v =>
+            v.title.toLowerCase().includes(searchTerm) ||
+            v.make.toLowerCase().includes(searchTerm) ||
+            v.model.toLowerCase().includes(searchTerm) ||
+            v.location?.toLowerCase().includes(searchTerm)
+        );
+      }
+
+      // Apply vehicle type filter
+      if (filters.vehicleType) {
+        filtered = filtered.filter(
+          v => v.vehicle_type === filters.vehicleType
+        );
+      }
+
+      // Apply make filter
+      if (filters.make) {
+        filtered = filtered.filter(v => v.make === filters.make);
+      }
+
+      // Apply model filter
+      if (filters.model) {
+        filtered = filtered.filter(v => v.model === filters.model);
+      }
+
+      // Apply price range filter
+      if (filters.priceRange) {
+        const [min, max] = filters.priceRange;
+        filtered = filtered.filter(
+          v => v.price >= min && v.price <= max
+        );
+      }
+
+      // Apply year range filter
+      if (filters.yearRange) {
+        const [min, max] = filters.yearRange;
+        filtered = filtered.filter(
+          v => v.year >= min && v.year <= max
+        );
+      }
+
+      // Apply location filter
+      if (filters.location && filters.location !== 'all') {
+        filtered = filtered.filter(
+          v => v.location?.toLowerCase() === filters.location.toLowerCase()
+        );
+      }
+
+      // Apply fuel type filter
+      if (filters.fuelType) {
+        filtered = filtered.filter(
+          v => v.fuel_type?.toLowerCase() === filters.fuelType!.toLowerCase()
+        );
+      }
+
+      // Apply transmission filter
+      if (filters.transmission) {
+        filtered = filtered.filter(
+          v => v.transmission?.toLowerCase() === filters.transmission!.toLowerCase()
+        );
+      }
+
+      setFilteredVehicles(filtered);
+    }
+  }, [filters, dataLoaded, initialFiltersApplied, vehicles])
 
   const loadVehicles = async () => {
     try {
@@ -130,83 +204,127 @@ export default function VehicleList() {
     }
   }
 
-  const handleFilter = (newFilters: {
-    search: string;
-    vehicleType: string;
-    make: string;
-    priceRange: [number, number];
-    yearRange: [number, number];
-    location: string;
-    fuelType: string;
-    transmission: string;
-  }) => {
-    setFilters(newFilters)
+  const handleFilter = (newFilters: Partial<Filters>) => {
+    setFilters(prev => {
+      const updatedFilters = { ...prev, ...newFilters };
+      
+      // Convert 'all' values to undefined for consistency
+      if (updatedFilters.make === 'all') {
+        updatedFilters.make = undefined;
+      }
+      if (updatedFilters.model === 'all') {
+        updatedFilters.model = undefined;
+      }
+      if (updatedFilters.vehicleType === 'all') {
+        updatedFilters.vehicleType = undefined;
+      }
+      if (updatedFilters.fuelType === 'all') {
+        updatedFilters.fuelType = undefined;
+      }
+      if (updatedFilters.transmission === 'all') {
+        updatedFilters.transmission = undefined;
+      }
+      
+      // If make is changed, reset model
+      if (newFilters.make !== undefined && newFilters.make !== prev.make) {
+        updatedFilters.model = undefined;
+      }
 
-    let filtered = [...vehicles]
+      // Update URL with new filters
+      const params = new URLSearchParams();
+      if (updatedFilters.search) params.set('search', updatedFilters.search);
+      if (updatedFilters.vehicleType) params.set('vehicleType', updatedFilters.vehicleType);
+      if (updatedFilters.make) params.set('make', updatedFilters.make);
+      if (updatedFilters.model) params.set('model', updatedFilters.model);
+      if (updatedFilters.fuelType) params.set('fuelType', updatedFilters.fuelType);
+      if (updatedFilters.transmission) params.set('transmission', updatedFilters.transmission);
 
-    if (newFilters.search) {
-      const searchTerm = newFilters.search.toLowerCase()
-      filtered = filtered.filter(v =>
-        v.title.toLowerCase().includes(searchTerm) ||
-        v.make.toLowerCase().includes(searchTerm) ||
-        v.model.toLowerCase().includes(searchTerm) ||
-        v.location?.toLowerCase().includes(searchTerm)
-      )
-    }
+      // Only update URL if we have any filters
+      if (Array.from(params.keys()).length > 0) {
+        window.history.pushState({}, '', `?${params.toString()}`);
+      } else {
+        window.history.pushState({}, '', '/vehicles');
+      }
 
-    if (newFilters.vehicleType && newFilters.vehicleType !== 'all') {
-      filtered = filtered.filter(v => v.vehicle_type === newFilters.vehicleType)
-    }
+      // Apply filters
+      let filtered = [...vehicles];
 
-    if (newFilters.make && newFilters.make !== 'all') {
-      filtered = filtered.filter(v =>
-        v.make.toLowerCase() === newFilters.make.toLowerCase()
-      )
-    }
+      // Apply search filter
+      if (updatedFilters.search) {
+        const searchTerm = updatedFilters.search.toLowerCase();
+        filtered = filtered.filter(
+          v =>
+            v.title.toLowerCase().includes(searchTerm) ||
+            v.make.toLowerCase().includes(searchTerm) ||
+            v.model.toLowerCase().includes(searchTerm) ||
+            v.location?.toLowerCase().includes(searchTerm)
+        );
+      }
 
-    if (newFilters.priceRange) {
-      filtered = filtered.filter(v =>
-        v.price >= newFilters.priceRange[0] && v.price <= newFilters.priceRange[1]
-      )
-    }
+      // Apply vehicle type filter
+      if (updatedFilters.vehicleType) {
+        filtered = filtered.filter(
+          v => v.vehicle_type === updatedFilters.vehicleType
+        );
+      }
 
-    if (newFilters.yearRange) {
-      filtered = filtered.filter(v =>
-        v.year >= newFilters.yearRange[0] && v.year <= newFilters.yearRange[1]
-      )
-    }
+      // Apply make filter
+      if (updatedFilters.make) {
+        filtered = filtered.filter(v => v.make === updatedFilters.make);
+      }
 
-    if (newFilters.location) {
-      filtered = filtered.filter(v =>
-        v.location?.toLowerCase().includes(newFilters.location.toLowerCase())
-      )
-    }
+      // Apply model filter
+      if (updatedFilters.model) {
+        filtered = filtered.filter(v => v.model === updatedFilters.model);
+      }
 
-    if (newFilters.fuelType && newFilters.fuelType !== 'all') {
-      filtered = filtered.filter(v =>
-        v.fuel_type?.toLowerCase() === newFilters.fuelType.toLowerCase()
-      )
-    }
+      // Apply price range filter
+      if (updatedFilters.priceRange) {
+        const [min, max] = updatedFilters.priceRange;
+        filtered = filtered.filter(
+          v => v.price >= min && v.price <= max
+        );
+      }
 
-    if (newFilters.transmission && newFilters.transmission !== 'all') {
-      filtered = filtered.filter(v =>
-        v.transmission?.toLowerCase() === newFilters.transmission.toLowerCase()
-      )
-    }
+      // Apply year range filter
+      if (updatedFilters.yearRange) {
+        const [min, max] = updatedFilters.yearRange;
+        filtered = filtered.filter(
+          v => v.year >= min && v.year <= max
+        );
+      }
 
-    setFilteredVehicles(filtered)
+      // Apply location filter
+      if (updatedFilters.location && updatedFilters.location !== 'all') {
+        filtered = filtered.filter(
+          v => v.location?.toLowerCase() === updatedFilters.location.toLowerCase()
+        );
+      }
+
+      // Apply fuel type filter
+      if (updatedFilters.fuelType) {
+        filtered = filtered.filter(
+          v => v.fuel_type?.toLowerCase() === updatedFilters.fuelType!.toLowerCase()
+        );
+      }
+
+      // Apply transmission filter
+      if (updatedFilters.transmission) {
+        filtered = filtered.filter(
+          v => v.transmission?.toLowerCase() === updatedFilters.transmission!.toLowerCase()
+        );
+      }
+
+      setFilteredVehicles(filtered);
+      return updatedFilters;
+    });
   }
 
   const handleResetFilters = () => {
     const resetFilters = {
-      search: '',
-      vehicleType: 'all',
-      make: 'all',
       priceRange: [0, 150000000] as [number, number],
       yearRange: [1990, new Date().getFullYear()] as [number, number],
-      location: '',
-      fuelType: 'all',
-      transmission: 'all'
+      location: ''
     }
     
     setFilters(resetFilters)
@@ -382,27 +500,29 @@ export default function VehicleList() {
                 <div className="sticky top-20">
                   <VehicleFilters
                     filters={{
-                      search: filters.search,
-                      vehicleType: filters.vehicleType,
-                      make: filters.make,
+                      search: filters.search || '',
+                      vehicleType: filters.vehicleType || 'all',
+                      make: filters.make || '',
+                      model: filters.model || '',
                       priceRange: searchParams.get('priceRange') || '',
                       priceMin: filters.priceRange[0],
                       priceMax: filters.priceRange[1],
                       yearFrom: filters.yearRange[0],
                       yearTo: filters.yearRange[1],
-                      fuelType: filters.fuelType,
-                      transmission: filters.transmission
+                      fuelType: filters.fuelType || 'all',
+                      transmission: filters.transmission || 'all'
                     }}
                     onFiltersChange={(newFilters) => {
                       handleFilter({
-                        search: newFilters.search || '',
-                        vehicleType: newFilters.vehicleType || 'all',
-                        make: newFilters.make || 'all',
+                        search: newFilters.search || undefined,
+                        vehicleType: newFilters.vehicleType || undefined,
+                        make: newFilters.make || undefined,
+                        model: newFilters.model || undefined,
                         priceRange: [newFilters.priceMin || 0, newFilters.priceMax || 150000000],
                         yearRange: [newFilters.yearFrom || 1990, newFilters.yearTo || new Date().getFullYear()],
                         location: filters.location,
-                        fuelType: newFilters.fuelType || 'all',
-                        transmission: newFilters.transmission || 'all'
+                        fuelType: newFilters.fuelType || undefined,
+                        transmission: newFilters.transmission || undefined
                       })
                     }}
                   />
