@@ -504,6 +504,7 @@ export default function VehicleList() {
                       vehicleType: filters.vehicleType || 'all',
                       make: filters.make || '',
                       model: filters.model || '',
+                      location: filters.location || 'all',
                       priceRange: searchParams.get('priceRange') || '',
                       priceMin: filters.priceRange[0],
                       priceMax: filters.priceRange[1],
@@ -518,9 +519,9 @@ export default function VehicleList() {
                         vehicleType: newFilters.vehicleType || undefined,
                         make: newFilters.make || undefined,
                         model: newFilters.model || undefined,
+                        location: newFilters.location === 'all' ? '' : newFilters.location || '',
                         priceRange: [newFilters.priceMin || 0, newFilters.priceMax || 150000000],
                         yearRange: [newFilters.yearFrom || 1990, newFilters.yearTo || new Date().getFullYear()],
-                        location: filters.location,
                         fuelType: newFilters.fuelType || undefined,
                         transmission: newFilters.transmission || undefined
                       })
