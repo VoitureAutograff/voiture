@@ -9,6 +9,7 @@ interface VehicleFiltersProps {
     vehicleType?: string;
     make?: string;
     model?: string;
+    location?: string;
     priceRange?: string;
     priceMin?: number;
     priceMax?: number;
@@ -30,6 +31,7 @@ interface VehicleFiltersProps {
 export default function VehicleFilters({ filters, onFiltersChange }: VehicleFiltersProps) {
   const [showMakeDropdown, setShowMakeDropdown] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   
   // Ensure filters has all required properties with defaults
   const safeFilters = {
@@ -37,6 +39,7 @@ export default function VehicleFilters({ filters, onFiltersChange }: VehicleFilt
     vehicleType: filters.vehicleType || 'all',
     make: filters.make || '',
     model: filters.model || '',
+    location: filters.location || 'all',
     priceMin: filters.priceMin || 100000,
     priceMax: filters.priceMax || 150000000,
     yearFrom: filters.yearFrom || 1990,
@@ -162,6 +165,47 @@ export default function VehicleFilters({ filters, onFiltersChange }: VehicleFilt
 
   const availableMakes = getMakesForVehicleType();
   const availableModels = getModelsForMake();
+
+  // Location options - All Indian states
+  const locationOptions = [
+    'All India',
+    'Andhra Pradesh',
+    'Arunachal Pradesh',
+    'Assam',
+    'Bihar',
+    'Chhattisgarh',
+    'Goa',
+    'Gujarat',
+    'Haryana',
+    'Himachal Pradesh',
+    'Jharkhand',
+    'Karnataka',
+    'Kerala',
+    'Madhya Pradesh',
+    'Maharashtra',
+    'Manipur',
+    'Meghalaya',
+    'Mizoram',
+    'Nagaland',
+    'Odisha',
+    'Punjab',
+    'Rajasthan',
+    'Sikkim',
+    'Tamil Nadu',
+    'Telangana',
+    'Tripura',
+    'Uttar Pradesh',
+    'Uttarakhand',
+    'West Bengal',
+    'Andaman and Nicobar Islands',
+    'Chandigarh',
+    'Dadra and Nagar Haveli and Daman and Diu',
+    'Delhi',
+    'Jammu and Kashmir',
+    'Ladakh',
+    'Lakshadweep',
+    'Puducherry'
+  ];
 
   return (
     <div className="bg-white rounded-lg border p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -371,6 +415,89 @@ export default function VehicleFilters({ filters, onFiltersChange }: VehicleFilt
           </div>
         )}
       </div>      
+{/* Location */}
+      <div className="relative">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Location
+        </label>
+        <input
+          type="text"
+          value={safeFilters.location === 'all' ? '' : safeFilters.location || ''}
+          onChange={(e) => {
+            const newValue = e.target.value;
+            // Update the input value for typing
+            onFiltersChange({
+              ...safeFilters,
+              location: newValue || 'all'
+            });
+            setShowLocationDropdown(true);
+          }}
+          onFocus={() => setShowLocationDropdown(true)}
+          onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
+          placeholder="Type or select location"
+          className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+        />
+        
+        {/* Location Dropdown */}
+        {showLocationDropdown && (
+          <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                onFiltersChange({
+                  ...safeFilters,
+                  location: 'all'
+                });
+                setShowLocationDropdown(false);
+              }}
+              className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors cursor-pointer text-sm border-b border-gray-100"
+            >
+              All India
+            </button>
+            {locationOptions
+              .filter(location => 
+                location.toLowerCase().includes((safeFilters.location === 'all' ? '' : safeFilters.location || '').toLowerCase())
+              )
+              .filter(location => location !== 'All India') // Remove "All India" from the filtered list since it's already shown above
+              .map((location, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => {
+                    onFiltersChange({
+                      ...safeFilters,
+                      location: location.toLowerCase().replace(' ', '')
+                    });
+                    setShowLocationDropdown(false);
+                  }}
+                  className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors cursor-pointer text-sm border-b border-gray-100 last:border-b-0"
+                >
+                  {location}
+                </button>
+              ))
+            }
+            {/* Show custom location option if typed value doesn't match any available locations */}
+            {safeFilters.location && safeFilters.location !== 'all' && !locationOptions.some(location => 
+              location.toLowerCase() === (safeFilters.location === 'all' ? '' : safeFilters.location || '').toLowerCase()
+            ) && (
+              <button
+                type="button"
+                onClick={() => {
+                  onFiltersChange({
+                    ...safeFilters,
+                    location: safeFilters.location
+                  });
+                  setShowLocationDropdown(false);
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors cursor-pointer text-sm border-b border-gray-100 bg-blue-50 font-medium"
+              >
+                Search for "{safeFilters.location}"
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
 {/* Price Range */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
