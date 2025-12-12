@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useActivityLogger } from '../../hooks/useActivityLogger';
+import { useMatchingLogic } from '../../hooks/useMatchingLogic';
+import MatchingPopup from '../../components/feature/MatchingPopup';
 
 // Frontend data for makes and models - no backend dependency
 const CAR_MAKES_MODELS = {
@@ -121,6 +123,7 @@ export default function PostVehicle() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { logVehiclePosted } = useActivityLogger();
+  const { matches, isLoading: matchingLoading, checkPartialMatches } = useMatchingLogic();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
@@ -130,6 +133,8 @@ export default function PostVehicle() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showHomeMakeDropdown, setShowHomeMakeDropdown] = useState<number | null>(null);
   const [showHomeModelDropdown, setShowHomeModelDropdown] = useState<number | null>(null);
+  const [showMatchingPopup, setShowMatchingPopup] = useState(false);
+  const [hasCheckedMatches, setHasCheckedMatches] = useState(false);
   const [formData, setFormData] = useState<VehicleFormData>({
     title: '',
     make: '',
@@ -172,6 +177,13 @@ export default function PostVehicle() {
     home_vehicles: [],
   });
 
+  // Helper to build a stable key for "don't show again" for this vehicle
+  const getVehicleMatchKey = () => {
+    const uid = user?.id || 'guest';
+    const year = formData.year || '';
+    return `vehicle-match-dismissed:${uid}:${formData.vehicle_type}:${formData.make}:${formData.model}:${year}`;
+  };
+
   // Force page load check and navigation
   useEffect(() => {
     console.log('🔧 PostVehicle component mounted');
@@ -195,6 +207,8 @@ export default function PostVehicle() {
       }
     }
   }, [formData.make, formData.model, formData.year]);
+
+  
 
   // Loading state
   if (loading) {
@@ -280,6 +294,12 @@ export default function PostVehicle() {
     if (field === 'make') {
       setFormData(prev => ({ ...prev, model: '' }));
     }
+
+    // When core identity fields change, allow re-checking matches
+    if (['make', 'model', 'year', 'vehicle_type'].includes(field)) {
+      setHasCheckedMatches(false);
+      setShowMatchingPopup(false);
+    }
   };
 
   const handleMakeSelect = (make: string) => {
@@ -312,32 +332,6 @@ export default function PostVehicle() {
 
     return null;
   };
-
-  // Header
-  <div className="bg-white shadow-sm border-b">
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-      <div className="flex items-center justify-between">
-        <Link to="/" className="flex items-center">
-          <img 
-            src="https://static.readdy.ai/image/02fae2dc1f09ff057a6d421cf0d8e42d/74c49d58028519ef85759f1bff88ebee.jfif" 
-            alt="Voiture.in" 
-            className="h-8 sm:h-10 w-auto object-contain"
-          />
-        </Link>
-        <nav className="flex items-center space-x-6 text-sm">
-          <Link to="/" className="text-gray-600 hover:text-blue-600 transition-colors">
-            Home
-          </Link>
-          <Link to="/vehicles" className="text-gray-600 hover:text-blue-600 transition-colors">
-            Browse
-          </Link>
-          <Link to="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">
-            Dashboard
-          </Link>
-        </nav>
-      </div>
-    </div>
-  </div>;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -555,13 +549,39 @@ export default function PostVehicle() {
       // Log activity
       logVehiclePosted(result.vehicleId, submitData);
 
-      // Show success message and redirect
-      setSuccessMessage('Vehicle submitted successfully! Redirecting to dashboard...');
+      // After successful post, check for matching requirements for this vehicle
+      const vehicleMatchContext = {
+        make: formData.make,
+        model: formData.model,
+        year: Number(formData.year),
+        vehicle_type: formData.vehicle_type,
+      } as const;
 
-      setTimeout(() => {
-        navigate('/dashboard', { replace: true });
-      }, 2000);
+      const matchingRequirements = await checkPartialMatches(vehicleMatchContext);
 
+      if (matchingRequirements.length > 0) {
+        // Persist match context so dashboard/home can re‑show popup later
+        if (typeof window !== 'undefined') {
+          const payload = {
+            ...vehicleMatchContext,
+            foundAt: new Date().toISOString(),
+          };
+          console.log('💾 Saving pending vehicle match to localStorage:', payload);
+          localStorage.setItem('pending-vehicle-match', JSON.stringify(payload));
+        }
+
+        // Show popup with matches instead of immediately redirecting
+        setShowMatchingPopup(true);
+        setHasCheckedMatches(true);
+        setSuccessMessage('Vehicle submitted successfully! We found some matching requirements.');
+      } else {
+        // No matches found, keep existing redirect behaviour
+        setSuccessMessage('Vehicle submitted successfully! Redirecting to dashboard...');
+
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 2000);
+      }
     } catch (error: any) {
       console.error('❌ Error posting vehicle:', error);
       setErrorMessage('Failed to post vehicle. Please check your internet connection and try again.');
@@ -569,8 +589,6 @@ export default function PostVehicle() {
       setIsSubmitting(false);
     }
   };
-
-  
 
   const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, 4));
   const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
@@ -1265,8 +1283,7 @@ export default function PostVehicle() {
                       type="date"
                       value={formData.fitness_valid_until}
                       onChange={e => handleInputChange('fitness_valid_until', e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-5
-                      focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
 
@@ -1278,8 +1295,7 @@ export default function PostVehicle() {
                       type="date"
                       value={formData.pollution_valid_until}
                       onChange={e => handleInputChange('pollution_valid_until', e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                      focus:border-transparent"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -1296,8 +1312,7 @@ export default function PostVehicle() {
                       <select
                         value={formData.service_history}
                         onChange={e => handleInputChange('service_history', e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                        focus:border-transparent pr-8"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                       >
                         <option value="complete">Complete Service History</option>
                         <option value="partial">Partial Service History</option>
@@ -1312,8 +1327,7 @@ export default function PostVehicle() {
                       <select
                         value={formData.tyres_condition}
                         onChange={e => handleInputChange('tyres_condition', e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                        focus:border-transparent pr-8"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                       >
                         <option value="excellent">Excellent</option>
                         <option value="good">Good</option>
@@ -1329,8 +1343,7 @@ export default function PostVehicle() {
                       <select
                         value={formData.exterior_condition}
                         onChange={e => handleInputChange('exterior_condition', e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                        focus:border-transparent pr-8"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                       >
                         <option value="excellent">Excellent</option>
                         <option value="good">Good</option>
@@ -1346,8 +1359,7 @@ export default function PostVehicle() {
                       <select
                         value={formData.interior_condition}
                         onChange={e => handleInputChange('interior_condition', e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                        focus:border-transparent pr-8"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                       >
                         <option value="excellent">Excellent</option>
                         <option value="good">Good</option>
@@ -1363,8 +1375,7 @@ export default function PostVehicle() {
                       <select
                         value={formData.engine_condition}
                         onChange={e => handleInputChange('engine_condition', e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                        focus:border-transparent pr-8"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                       >
                         <option value="excellent">Excellent</option>
                         <option value="good">Good</option>
@@ -1380,8 +1391,7 @@ export default function PostVehicle() {
                       <select
                         value={formData.parking_type}
                         onChange={e => handleInputChange('parking_type', e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                        focus:border-transparent pr-8"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                       >
                         <option value="garage">Garage Parked</option>
                         <option value="covered">Covered Parking</option>
@@ -1400,8 +1410,7 @@ export default function PostVehicle() {
                     value={formData.additional_notes}
                     onChange={e => handleInputChange('additional_notes', e.target.value)}
                     rows={4}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-                    focus:border-transparent"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Any additional information about the vehicle condition, modifications, recent repairs, etc."
                   ></textarea>
                 </div>
@@ -1784,6 +1793,30 @@ export default function PostVehicle() {
             )}
           </div>
         </div>
+
+        <MatchingPopup
+          isOpen={showMatchingPopup}
+          onClose={() => {
+            setShowMatchingPopup(false);
+            navigate('/dashboard', { replace: true });
+          }}
+          onDontShowAgain={() => {
+            const key = getVehicleMatchKey();
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(key, '1');
+            }
+            setShowMatchingPopup(false);
+            navigate('/dashboard', { replace: true });
+          }}
+          type="vehicle-matches-requirement"
+          vehicleData={{
+            make: formData.make,
+            model: formData.model,
+            year: Number(formData.year) || new Date().getFullYear(),
+            vehicle_type: formData.vehicle_type,
+          }}
+          matches={matches}
+        />
       </div>
     </div>
   );
