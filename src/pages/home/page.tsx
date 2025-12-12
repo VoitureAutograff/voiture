@@ -8,12 +8,22 @@ import Hero from './components/Hero';
 import SearchFilters from './components/SearchFilters';
 import FeaturedVehicles from './components/FeaturedVehicles';
 import RequirementForm from './components/RequirementForm';
+import { useMatchingLogic } from '../../hooks/useMatchingLogic';
+import MatchingPopup from '../../components/feature/MatchingPopup';
 
 export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
   const [showRequirementForm, setShowRequirementForm] = useState(false);
+  const { matches, checkPartialMatches } = useMatchingLogic();
+  const [showMatchingPopup, setShowMatchingPopup] = useState(false);
+  const [vehicleMatchContext, setVehicleMatchContext] = useState<{
+    make: string;
+    model: string;
+    year: number;
+    vehicle_type: 'car' | 'bike';
+  } | null>(null);
 
   // SEO: Set page title and meta description
   useEffect(() => {
@@ -52,6 +62,54 @@ export default function HomePage() {
       }
     };
   }, []);
+
+  // Show pending vehicle match popup on homepage if present (run once per user)
+  useEffect(() => {
+    if (!user) return;
+    if (typeof window === 'undefined') return;
+
+    const timer = setTimeout(() => {
+      const raw = localStorage.getItem('pending-vehicle-match');
+      if (!raw) return;
+
+      try {
+        const parsed = JSON.parse(raw) as {
+          make: string;
+          model: string;
+          year: number;
+          vehicle_type: 'car' | 'bike';
+        };
+
+        if (!parsed.make || !parsed.model || !parsed.year || !parsed.vehicle_type) return;
+
+        const matchKey = `vehicle-match-dismissed:${user.id}:${parsed.vehicle_type}:${parsed.make}:${parsed.model}:${parsed.year}`;
+        const dismissed = localStorage.getItem(matchKey);
+        if (dismissed === '1') {
+          console.log('⚠️ Home: pending vehicle match was previously dismissed, clearing flag:', parsed);
+          localStorage.removeItem('pending-vehicle-match');
+          return;
+        }
+
+        (async () => {
+          console.log('🔍 Home: found pending vehicle match context, re-checking matches with:', parsed);
+          setVehicleMatchContext(parsed);
+          const found = await checkPartialMatches(parsed);
+          if (found.length > 0) {
+            console.log('✅ Home: matches still found on re-check, showing popup. Count:', found.length);
+            setShowMatchingPopup(true);
+          } else {
+            console.log('ℹ️ Home: no matches found on re-check, clearing pending flag');
+            localStorage.removeItem('pending-vehicle-match');
+          }
+        })();
+      } catch {
+        console.log('❌ Home: failed to parse pending-vehicle-match, clearing');
+        localStorage.removeItem('pending-vehicle-match');
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [user?.id]);
 
   // Check if we should open requirement form from navigation state or URL parameters
   useEffect(() => {
@@ -205,6 +263,27 @@ export default function HomePage() {
       {/* Requirement Form Modal */}
       {showRequirementForm && (
         <RequirementForm onClose={() => setShowRequirementForm(false)} />
+      )}
+
+      {vehicleMatchContext && (
+        <MatchingPopup
+          isOpen={showMatchingPopup}
+          onClose={() => {
+            // Session-only hide: do NOT clear pending-vehicle-match so it can reappear on next login
+            setShowMatchingPopup(false);
+          }}
+          onDontShowAgain={() => {
+            if (typeof window !== 'undefined' && user && vehicleMatchContext) {
+              const key = `vehicle-match-dismissed:${user.id}:${vehicleMatchContext.vehicle_type}:${vehicleMatchContext.make}:${vehicleMatchContext.model}:${vehicleMatchContext.year}`;
+              localStorage.setItem(key, '1');
+              localStorage.removeItem('pending-vehicle-match');
+            }
+            setShowMatchingPopup(false);
+          }}
+          type="vehicle-matches-requirement"
+          vehicleData={vehicleMatchContext}
+          matches={matches}
+        />
       )}
     </div>
   );
