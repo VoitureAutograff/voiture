@@ -1,10 +1,11 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
 import Header from '../../components/feature/Header';
 import Footer from '../../components/feature/Footer';
+import { useMatchingLogic } from '../../hooks/useMatchingLogic';
+import MatchingPopup from '../../components/feature/MatchingPopup';
 
 interface Vehicle {
   id: string;
@@ -69,6 +70,15 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
 
+  const { matches, isLoading: matchingLoading, checkPartialMatches } = useMatchingLogic();
+  const [showMatchingPopup, setShowMatchingPopup] = useState(false);
+  const [vehicleMatchContext, setVehicleMatchContext] = useState<{
+    make: string;
+    model: string;
+    year: number;
+    vehicle_type: 'car' | 'bike';
+  } | null>(null);
+
   // Change Password Modal States
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordData, setPasswordData] = useState({
@@ -90,6 +100,10 @@ export default function Dashboard() {
     registration_number: ''
   });
   const [isSubmittingHouseVehicle, setIsSubmittingHouseVehicle] = useState(false);
+
+  // Profile Picture States
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [isUploadingProfile, setIsUploadingProfile] = useState(false);
 
   const loadDashboardData = async () => {
     if (!user) return;
@@ -136,6 +150,7 @@ export default function Dashboard() {
       setRequirements(requirementsResponse.data || []);
       setHouseVehicles(houseVehiclesResponse.data || []);
       setFavorites(favoritesResponse.data || []);
+      setProfilePicture((user as any)?.user_metadata?.profile_picture || null);
       setDataLoaded(true);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -153,6 +168,55 @@ export default function Dashboard() {
       navigate('/login');
     }
   }, [initialized, user]);
+
+  // Check for any pending vehicle matches saved after posting (run once per user)
+  useEffect(() => {
+    if (!initialized || !user) return;
+
+    if (typeof window === 'undefined') return;
+
+    const timer = setTimeout(() => {
+      const raw = localStorage.getItem('pending-vehicle-match');
+      if (!raw) return;
+
+      try {
+        const parsed = JSON.parse(raw) as {
+          make: string;
+          model: string;
+          year: number;
+          vehicle_type: 'car' | 'bike';
+        };
+
+        if (!parsed.make || !parsed.model || !parsed.year || !parsed.vehicle_type) return;
+
+        const matchKey = `vehicle-match-dismissed:${user.id}:${parsed.vehicle_type}:${parsed.make}:${parsed.model}:${parsed.year}`;
+        const dismissed = localStorage.getItem(matchKey);
+        if (dismissed === '1') {
+          console.log('⚠️ Pending vehicle match was previously dismissed, clearing flag:', parsed);
+          localStorage.removeItem('pending-vehicle-match');
+          return;
+        }
+
+        (async () => {
+          console.log('🔍 Dashboard: found pending vehicle match context, re-checking matches with:', parsed);
+          setVehicleMatchContext(parsed);
+          const found = await checkPartialMatches(parsed);
+          if (found.length > 0) {
+            console.log('✅ Dashboard: matches still found on re-check, showing popup. Count:', found.length);
+            setShowMatchingPopup(true);
+          } else {
+            console.log('ℹ️ Dashboard: no matches found on re-check, clearing pending flag');
+            localStorage.removeItem('pending-vehicle-match');
+          }
+        })();
+      } catch {
+        console.log('❌ Dashboard: failed to parse pending-vehicle-match, clearing');
+        localStorage.removeItem('pending-vehicle-match');
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [initialized, user?.id]);
 
   const removeFavorite = async (favoriteId: string) => {
     try {
@@ -262,10 +326,11 @@ export default function Dashboard() {
     }
   };
 
-  const formatPrice = (price: number | null) => {
-    if (!price || price === null) {
+  const formatPrice = (price: number | null | undefined) => {
+    if (!price && price !== 0) {
       return 'N/A';
     }
+    if (typeof price !== 'number') return 'N/A';
     if (price >= 10000000) {
       return `₹${(price / 10000000).toFixed(1)} Cr`;
     } else if (price >= 100000) {
@@ -274,7 +339,8 @@ export default function Dashboard() {
     return `₹${price.toLocaleString()}`;
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | undefined) => {
+    if (!status) return 'bg-gray-100 text-gray-800';
     switch (status.toLowerCase()) {
       case 'active': return 'bg-green-100 text-green-800';
       case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -331,6 +397,45 @@ export default function Dashboard() {
     }
   };
 
+  const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsUploadingProfile(true);
+
+    try {
+      // Upload to Supabase Storage (avatars bucket)
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = fileName; // No 'avatars/' prefix since we're uploading directly to the bucket
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update user profile with avatar URL using auth metadata (bypasses Storage RLS)
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { profile_picture: publicUrl }
+      });
+
+      if (updateError) throw updateError;
+
+      setProfilePicture(publicUrl);
+    } catch (error: any) {
+      console.error('Error uploading profile picture:', error);
+      alert('Failed to upload profile picture: ' + error.message);
+    } finally {
+      setIsUploadingProfile(false);
+    }
+  };
+
   // Show loading during auth check or initial data load
   if (!initialized || authLoading || (user && isLoading && !dataLoaded)) {
     return (
@@ -363,8 +468,25 @@ export default function Dashboard() {
           <div className="max-w-7xl mx-auto">
             {/* Header */}
             <div className="mb-6 sm:mb-8">
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
-              <p className="text-gray-600 text-sm sm:text-base">Welcome back, {user?.name}</p>
+              <div className="flex items-center space-x-4">
+                <div className="flex-shrink-0">
+                  {profilePicture ? (
+                    <img
+                      src={profilePicture}
+                      alt="Profile"
+                      className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center">
+                      <i className="ri-user-line text-xl text-gray-400"></i>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Dashboard</h1>
+                  <p className="text-gray-600 text-sm sm:text-base">Welcome back, {user?.name}</p>
+                </div>
+              </div>
             </div>
 
             {/* Mobile Tab Selector */}
@@ -724,7 +846,7 @@ export default function Dashboard() {
                                 </div>
                               </td>
                               <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {formatPrice(favorite.vehicle_listings?.price)}
+                                {formatPrice(favorite.vehicle_listings?.price as any)}
                               </td>
                               <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(favorite.vehicle_listings?.status || 'unknown')}`}>
@@ -842,6 +964,53 @@ export default function Dashboard() {
                   </div>
                   
                   <div className="p-4 sm:p-6 space-y-6">
+                    {/* Profile Picture Section */}
+                    <div className="border-b border-gray-200 pb-6">
+                      <h3 className="text-base font-semibold text-gray-900 mb-4">Profile Picture</h3>
+                      <div className="flex items-center space-x-6">
+                        <div className="flex-shrink-0">
+                          {profilePicture ? (
+                            <img
+                              src={profilePicture}
+                              alt="Profile"
+                              className="h-20 w-20 rounded-full object-cover border-2 border-gray-200"
+                            />
+                          ) : (
+                            <div className="h-20 w-20 rounded-full bg-gray-200 flex items-center justify-center">
+                              <i className="ri-user-line text-2xl text-gray-400"></i>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <label
+                            htmlFor="profile-picture-upload"
+                            className="bg-white hover:bg-gray-50 px-4 py-2 border border-gray-300 rounded-lg font-medium text-gray-700 cursor-pointer inline-flex items-center transition-colors"
+                          >
+                            {isUploadingProfile ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                                Uploading...
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-upload-2-line mr-2"></i>
+                                Upload New Picture
+                              </>
+                            )}
+                          </label>
+                          <input
+                            id="profile-picture-upload"
+                            type="file"
+                            accept="image/*"
+                            onChange={handleProfilePictureUpload}
+                            className="hidden"
+                            disabled={isUploadingProfile}
+                          />
+                          <p className="text-xs text-gray-500 mt-2">JPG, PNG or GIF. Max 5MB.</p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Change Password Section */}
                     <div className="border-b border-gray-200 pb-6">
                       <h3 className="text-base font-semibold text-gray-900 mb-4">Security</h3>
@@ -925,9 +1094,7 @@ export default function Dashboard() {
                         required
                         value={houseVehicleData.model}
                         onChange={(e) => setHouseVehicleData({ ...houseVehicleData, model: e.target.value })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-5
-
-0 focus:border-transparent text-sm"
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                         placeholder="e.g., City"
                       />
                     </div>
@@ -1049,8 +1216,7 @@ export default function Dashboard() {
                       value={passwordData.confirmPassword}
                       onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                       disabled={isChangingPassword}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-5
-0 focus:border-transparent text-sm disabled:bg-gray-100"
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm disabled:bg-gray-100"
                       placeholder="Confirm new password"
                       minLength={6}
                     />
@@ -1088,6 +1254,24 @@ export default function Dashboard() {
       )}
 
       <Footer />
+
+      {vehicleMatchContext && (
+        <MatchingPopup
+          isOpen={showMatchingPopup}
+          onClose={() => setShowMatchingPopup(false)}
+          onDontShowAgain={() => {
+            if (typeof window !== 'undefined' && user && vehicleMatchContext) {
+              const key = `vehicle-match-dismissed:${user.id}:${vehicleMatchContext.vehicle_type}:${vehicleMatchContext.make}:${vehicleMatchContext.model}:${vehicleMatchContext.year}`;
+              localStorage.setItem(key, '1');
+              localStorage.removeItem('pending-vehicle-match');
+            }
+            setShowMatchingPopup(false);
+          }}
+          type="vehicle-matches-requirement"
+          vehicleData={vehicleMatchContext}
+          matches={matches}
+        />
+      )}
     </div>
   );
 }
