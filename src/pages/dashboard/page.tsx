@@ -111,7 +111,7 @@ export default function Dashboard() {
     try {
       setIsLoading(true);
       
-      const [vehiclesResponse, requirementsResponse, houseVehiclesResponse, favoritesResponse] = await Promise.all([
+      const [vehiclesResponse, requirementsResponse, houseVehiclesResponse, favoritesResponse, userMetaResponse] = await Promise.all([
         supabase
           .from('vehicle_listings')
           .select('*')
@@ -143,14 +143,30 @@ export default function Dashboard() {
             )
           `)
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('users')
+          .select('avatar_extension')
+          .eq('id', user.id)
+          .single()
       ]);
 
       setVehicles(vehiclesResponse.data || []);
       setRequirements(requirementsResponse.data || []);
       setHouseVehicles(houseVehiclesResponse.data || []);
       setFavorites(favoritesResponse.data || []);
-      setProfilePicture((user as any)?.user_metadata?.profile_picture || null);
+      // Handle avatar bucket image - use stored extension from users table
+      if (user) {
+        console.log('User meta response:', userMetaResponse);
+        const extension = userMetaResponse.data?.avatar_extension || 'jpg';
+        console.log('Using extension:', extension);
+        const avatarUrl = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatar/${user.id}-avatar.${extension}`;
+        console.log('Constructed avatar URL:', avatarUrl);
+        setProfilePicture(avatarUrl);
+      } else {
+        console.log('No user found');
+        setProfilePicture(null);
+      }
       setDataLoaded(true);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -404,30 +420,51 @@ export default function Dashboard() {
     setIsUploadingProfile(true);
 
     try {
-      // Upload to Supabase Storage (avatars bucket)
+      // Upload to storage bucket
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      const filePath = fileName; // No 'avatars/' prefix since we're uploading directly to the bucket
-
+      const fileName = `${user.id}-avatar.${fileExt}`;
+      
+      console.log('Uploading to avatar bucket:', fileName);
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
+        .from('avatar')
+        .upload(fileName, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
+        .from('avatar')
+        .getPublicUrl(fileName);
 
-      // Update user profile with avatar URL using auth metadata (bypasses Storage RLS)
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: { profile_picture: publicUrl }
+      console.log('Storage public URL:', publicUrl);
+
+      // Store file extension in both users table and auth metadata
+      console.log('Storing file extension in users table:', fileExt);
+      const { data: metaResult, error: metaError } = await supabase
+        .from('users')
+        .update({ avatar_extension: fileExt })
+        .eq('id', user.id)
+        .select();
+
+      console.log('Users table update result:', { metaResult, metaError });
+
+      if (metaError) {
+        console.error('Failed to store file extension:', metaError);
+      }
+
+      // Also store in auth metadata for Header component
+      const { data: authResult, error: authError } = await supabase.auth.updateUser({
+        data: { avatar_extension: fileExt }
       });
 
-      if (updateError) throw updateError;
+      console.log('Auth metadata update result:', { authResult, authError });
+
+      if (authError) {
+        console.error('Failed to store file extension in auth:', authError);
+      }
 
       setProfilePicture(publicUrl);
+      console.log('Profile picture updated successfully');
     } catch (error: any) {
       console.error('Error uploading profile picture:', error);
       alert('Failed to upload profile picture: ' + error.message);
@@ -1035,11 +1072,7 @@ export default function Dashboard() {
                           <span className="text-sm text-gray-600">Email</span>
                           <span className="text-sm font-medium text-gray-900">{user?.email}</span>
                         </div>
-                        <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                          <span className="text-sm text-gray-600">Phone</span>
-                          <span className="text-sm font-medium text-gray-900">{user?.phone || 'Not provided'}</span>
-                        </div>
-                        <div className="flex items-center justify-between py-3">
+                                                <div className="flex items-center justify-between py-3">
                           <span className="text-sm text-gray-600">Member Since</span>
                           <span className="text-sm font-medium text-gray-900">
                             {new Date(user?.created_at || '').toLocaleDateString()}
