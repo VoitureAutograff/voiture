@@ -6,24 +6,30 @@ import { supabase } from '../../lib/supabase';
 import NotificationSystem from '../base/NotificationSystem';
 import ProfilePicture from '../base/ProfilePicture';
 
-// Helper function to get avatar URL
-const getAvatarUrl = (userId: string, extension?: string) => {
-  const ext = extension || 'jpg';
-  return `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatar/${userId}-avatar.${ext}`;
-};
-
 export default function Header() {
   const { user, signOut, initialized } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [avatarExtension, setAvatarExtension] = useState<string>('jpg');
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
 
-  // Load avatar extension from auth metadata
+  // Load profile picture from profile_pictures table
   useEffect(() => {
-    if (user && (user as any)?.user_metadata?.avatar_extension) {
-      setAvatarExtension((user as any).user_metadata.avatar_extension);
+    if (user) {
+      const loadProfilePicture = async () => {
+        const { data } = await supabase
+          .from('profile_pictures')
+          .select('public_url')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        setProfilePictureUrl(data?.public_url || null);
+      };
+      
+      loadProfilePicture();
     }
   }, [user]);
 
@@ -121,7 +127,7 @@ export default function Header() {
                     onClick={() => setShowProfileDropdown(!showProfileDropdown)}
                     className="flex items-center space-x-1 sm:space-x-2 p-1 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                   >
-                    <ProfilePicture src={user ? getAvatarUrl(user.id, avatarExtension) : null} name={user.name} size="sm" />
+                    <ProfilePicture src={profilePictureUrl} name={user.name} size="sm" />
                     <div className="hidden lg:block text-left max-w-24 xl:max-w-none">
                       <p className="text-xs xl:text-sm font-medium text-gray-900 truncate">
                         {user.name}
@@ -229,7 +235,7 @@ export default function Header() {
                 <>
                   <div className="border-t border-gray-200 pt-3 mt-3">
                     <div className="flex items-center space-x-3 px-3 py-2 mb-2">
-                      <ProfilePicture src={user ? getAvatarUrl(user.id, avatarExtension) : null} name={user.name} size="sm" />
+                      <ProfilePicture src={profilePictureUrl} name={user.name} size="sm" />
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-gray-900 text-sm truncate">{user.name}</p>
                         <p className="text-xs text-gray-600 truncate">{user.email}</p>
