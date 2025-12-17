@@ -1,9 +1,9 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { useActivityLogger } from '../../../hooks/useActivityLogger';
- 
+import { useMatchingLogic } from '../../../hooks/useMatchingLogic';
+import MatchingPopup from '../../../components/feature/MatchingPopup';
 
 interface RequirementFormProps {
   isOpen?: boolean;
@@ -17,6 +17,10 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
   const [error, setError] = useState<string | null>(null);
   const [showMakeDropdown, setShowMakeDropdown] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const { matches, checkRequirementMatches } = useMatchingLogic();
+  const [showMatchingPopup, setShowMatchingPopup] = useState(false);
+  const [hasCheckedMatches, setHasCheckedMatches] = useState(false);
+
   const [formData, setFormData] = useState({
     vehicleType: 'car',
     make: '',
@@ -45,7 +49,7 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
       Toyota: ['Innova', 'Fortuner', 'Camry', 'Corolla', 'Prius', 'Etios', 'Yaris'],
       Honda: ['City', 'Civic', 'Accord', 'CR-V', 'Jazz', 'WR-V', 'Amaze'],
       Ford: ['EcoSport', 'Endeavour', 'Figo', 'Aspire', 'Mustang', 'Freestyle'],
-      BMW: ['3 Series', '5 Series', 'X1', 'X3', 'X5', 'Z4', '7 Series'],
+      BMW: ['3 Series', '5 Series', 'X3', 'X5', 'i3', 'Z4', '7 Series', 'X1'],
       Mercedes: ['C-Class', 'E-Class', 'GLC', 'GLE', 'A-Class', 'S-Class'],
       Audi: ['A3', 'A4', 'A6', 'Q3', 'Q5', 'Q7', 'A8'],
       'Maruti Suzuki': ['Alto', 'Swift', 'Baleno', 'Dzire', 'Vitara Brezza', 'Ertiga', 'Ciaz'],
@@ -80,13 +84,24 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
     ? (selectedCategory[formData.make] || [])
     : [];
 
+  // Helpers that also reset matching flags when core fields change
+  const updateFormField = (field: keyof typeof formData, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+
+    if (['vehicleType', 'make', 'model', 'yearFrom', 'yearTo'].includes(field)) {
+      setHasCheckedMatches(false);
+      setShowMatchingPopup(false);
+    }
+  };
+
   const handleMakeSelect = (make: string) => {
-    setFormData({ ...formData, make, model: '' });
+    updateFormField('make', make);
+    updateFormField('model', '');
     setShowMakeDropdown(false);
   };
 
   const handleModelSelect = (model: string) => {
-    setFormData({ ...formData, model });
+    updateFormField('model', model);
     setShowModelDropdown(false);
   };
 
@@ -99,6 +114,14 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
   );
 
   const { logRequirementPosted } = useActivityLogger();
+
+  // Helper to build a stable key for "don't show again" for this requirement
+  const getRequirementMatchKey = () => {
+    const uid = user?.id || 'guest';
+    const fromYear = formData.yearFrom || '';
+    const toYear = formData.yearTo || '';
+    return `requirement-match-dismissed:${uid}:${formData.vehicleType}:${formData.make}:${formData.model}:${fromYear}:${toYear}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,31 +163,47 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
       // Log requirement posting activity
       logRequirementPosted(newRequirement.id, requirementData);
 
-      alert('Requirement posted successfully! Dealers will contact you if they have matching vehicles.');
-      onSuccess?.();
-      onClose();
-      
-      // Reset form
-      setFormData({
-        vehicleType: 'car',
-        make: '',
-        model: '',
-        yearFrom: '',
-        yearTo: '',
-        priceFrom: '',
-        priceTo: '',
-        location: '',
-        description: '',
-        fullName: '',
-        contactNumber: '',
-        email: user?.email || '',
-        urgency: 'moderate',
-        paymentMethod: 'cash',
-        inspectionLocation: '',
-        additionalRequirements: '',
-        budgetFlexibility: '10',
-        timeframe: '1-month'
+      // After successful post, check for matching vehicles based on submitted data
+      const matchesResult = await checkRequirementMatches({
+        make: requirementData.make || undefined,
+        model: requirementData.model || undefined,
+        year_range_min: requirementData.year_range_min || undefined,
+        year_range_max: requirementData.year_range_max || undefined,
+        vehicle_type: requirementData.vehicle_type as 'car' | 'bike',
       });
+
+      if (matchesResult.length > 0) {
+        setShowMatchingPopup(true);
+        setHasCheckedMatches(true);
+        alert('Requirement posted successfully! We found some matching vehicles.');
+        // Keep form open so user can interact with popup and then decide to close
+      } else {
+        alert('Requirement posted successfully! Dealers will contact you if they have matching vehicles.');
+        onSuccess?.();
+        onClose();
+
+        // Reset form
+        setFormData({
+          vehicleType: 'car',
+          make: '',
+          model: '',
+          yearFrom: '',
+          yearTo: '',
+          priceFrom: '',
+          priceTo: '',
+          location: '',
+          description: '',
+          fullName: '',
+          contactNumber: '',
+          email: user?.email || '',
+          urgency: 'moderate',
+          paymentMethod: 'cash',
+          inspectionLocation: '',
+          additionalRequirements: '',
+          budgetFlexibility: '10',
+          timeframe: '1-month'
+        });
+      }
     } catch (err: any) {
       console.error('Error posting requirement:', err);
       setError(err.message || 'Failed to post requirement. Please try again.');
@@ -291,7 +330,12 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, vehicleType: 'car', make: '', model: '' })}
+                onClick={() => {
+                  updateFormField('vehicleType', 'car');
+                  updateFormField('make', '');
+                  updateFormField('model', '');
+                }}
+
                 className={`flex-1 px-4 sm:px-6 py-3 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
                   formData.vehicleType === 'car'
                     ? 'bg-blue-600 text-white'
@@ -303,7 +347,12 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
               </button>
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, vehicleType: 'bike', make: '', model: '' })}
+                onClick={() => {
+                  updateFormField('vehicleType', 'bike');
+                  updateFormField('make', '');
+                  updateFormField('model', '');
+                }}
+
                 className={`flex-1 px-4 sm:px-6 py-3 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap ${
                   formData.vehicleType === 'bike'
                     ? 'bg-blue-600 text-white'
@@ -325,9 +374,11 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
                 type="text"
                 value={formData.make}
                 onChange={e => {
-                  setFormData({ ...formData, make: e.target.value, model: '' });
+                  updateFormField('make', e.target.value);
+                  updateFormField('model', '');
                   setShowMakeDropdown(true);
                 }}
+
                 onFocus={() => setShowMakeDropdown(true)}
                 onBlur={() => setTimeout(() => setShowMakeDropdown(false), 200)}
                 placeholder="Type or select make"
@@ -363,9 +414,10 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
                 type="text"
                 value={formData.model}
                 onChange={e => {
-                  setFormData({ ...formData, model: e.target.value });
+                  updateFormField('model', e.target.value);
                   setShowModelDropdown(true);
                 }}
+
                 onFocus={() => setShowModelDropdown(true)}
                 onBlur={() => setTimeout(() => setShowModelDropdown(false), 200)}
                 placeholder="Type or select model"
@@ -405,7 +457,8 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
               <input
                 type="number"
                 value={formData.yearFrom}
-                onChange={e => setFormData({ ...formData, yearFrom: e.target.value })}
+                onChange={e => updateFormField('yearFrom', e.target.value)}
+
                 placeholder="From year"
                 min="1990"
                 max="2024"
@@ -414,7 +467,8 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
               <input
                 type="number"
                 value={formData.yearTo}
-                onChange={e => setFormData({ ...formData, yearTo: e.target.value })}
+                onChange={e => updateFormField('yearTo', e.target.value)}
+
                 placeholder="To year"
                 min="1990"
                 max="2024"
@@ -517,6 +571,28 @@ export default function RequirementForm({ isOpen: _isOpen, onClose, onSuccess }:
           </div>
         </form>
       </div>
+
+      {/* Matching vehicles popup */}
+      <MatchingPopup
+        isOpen={showMatchingPopup}
+        onClose={() => setShowMatchingPopup(false)}
+        onDontShowAgain={() => {
+          const key = getRequirementMatchKey();
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(key, '1');
+          }
+          setShowMatchingPopup(false);
+        }}
+        type="requirement-matches-vehicle"
+        requirementData={{
+          make: formData.make || undefined,
+          model: formData.model || undefined,
+          year_range_min: formData.yearFrom ? parseInt(formData.yearFrom) : undefined,
+          year_range_max: formData.yearTo ? parseInt(formData.yearTo) : undefined,
+          vehicle_type: formData.vehicleType as 'car' | 'bike',
+        }}
+        matches={matches}
+      />
     </div>
   );
 }
