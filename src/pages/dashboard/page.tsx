@@ -111,7 +111,7 @@ export default function Dashboard() {
     try {
       setIsLoading(true);
       
-      const [vehiclesResponse, requirementsResponse, houseVehiclesResponse, favoritesResponse, userMetaResponse] = await Promise.all([
+      const [vehiclesResponse, requirementsResponse, houseVehiclesResponse, favoritesResponse] = await Promise.all([
         supabase
           .from('vehicle_listings')
           .select('*')
@@ -143,28 +143,28 @@ export default function Dashboard() {
             )
           `)
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('users')
-          .select('avatar_extension')
-          .eq('id', user.id)
-          .single()
+          .order('created_at', { ascending: false })
       ]);
 
       setVehicles(vehiclesResponse.data || []);
       setRequirements(requirementsResponse.data || []);
       setHouseVehicles(houseVehiclesResponse.data || []);
       setFavorites(favoritesResponse.data || []);
-      // Handle avatar bucket image - use stored extension from users table
-      if (user) {
-        console.log('User meta response:', userMetaResponse);
-        const extension = userMetaResponse.data?.avatar_extension || 'jpg';
-        console.log('Using extension:', extension);
-        const avatarUrl = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatar/${user.id}-avatar.${extension}`;
-        console.log('Constructed avatar URL:', avatarUrl);
-        setProfilePicture(avatarUrl);
+      
+      // Load profile picture from profile_pictures table only
+      const profilePictureResponse = await supabase
+        .from('profile_pictures')
+        .select('public_url')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      console.log('Profile picture from database:', profilePictureResponse);
+
+      if (profilePictureResponse.data?.public_url) {
+        setProfilePicture(profilePictureResponse.data.public_url);
       } else {
-        console.log('No user found');
         setProfilePicture(null);
       }
       setDataLoaded(true);
@@ -417,6 +417,7 @@ export default function Dashboard() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
+    console.log('Starting profile picture upload process');
     setIsUploadingProfile(true);
 
     try {
@@ -438,35 +439,72 @@ export default function Dashboard() {
 
       console.log('Storage public URL:', publicUrl);
 
-      // Store file extension in both users table and auth metadata
-      console.log('Storing file extension in users table:', fileExt);
-      const { data: metaResult, error: metaError } = await supabase
-        .from('users')
-        .update({ avatar_extension: fileExt })
-        .eq('id', user.id)
-        .select();
+      // Store profile picture in dedicated profile_pictures table
+      try {
+        // First, check if user already has a profile picture
+        const { data: existingRecord, error: checkError } = await supabase
+          .from('profile_pictures')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-      console.log('Users table update result:', { metaResult, metaError });
+        console.log('Existing record check:', { existingRecord, checkError });
 
-      if (metaError) {
-        console.error('Failed to store file extension:', metaError);
-      }
+        let profileResult;
+        let profileError;
 
-      // Also store in auth metadata for Header component
-      const { data: authResult, error: authError } = await supabase.auth.updateUser({
-        data: { avatar_extension: fileExt }
-      });
+        if (existingRecord) {
+          console.log('Updating existing record:', existingRecord.id);
+          // Update existing record
+          const result = await supabase
+            .from('profile_pictures')
+            .update({ 
+              file_name: fileName,
+              file_extension: fileExt,
+              public_url: publicUrl
+            })
+            .eq('id', existingRecord.id)
+            .select();
+          
+          profileResult = result.data;
+          profileError = result.error;
+          console.log('Update result:', { profileResult, profileError });
+        } else {
+          console.log('Creating new record for user:', user.id);
+          // Insert new record
+          const result = await supabase
+            .from('profile_pictures')
+            .insert({ 
+              user_id: user.id,
+              file_name: fileName,
+              file_extension: fileExt,
+              public_url: publicUrl
+            })
+            .select();
+          
+          profileResult = result.data;
+          profileError = result.error;
+          console.log('Insert result:', { profileResult, profileError });
+        }
 
-      console.log('Auth metadata update result:', { authResult, authError });
+        console.log('Profile pictures table update result:', { profileResult, profileError });
 
-      if (authError) {
-        console.error('Failed to store file extension in auth:', authError);
+        if (profileError) {
+          console.error('Failed to store profile picture data:', profileError);
+          throw profileError;
+        } else {
+          console.log('Successfully stored profile picture data:', profileResult);
+        }
+      } catch (dbError: any) {
+        console.error('Profile picture database operation failed:', dbError);
+        throw dbError;
       }
 
       setProfilePicture(publicUrl);
       console.log('Profile picture updated successfully');
+      
     } catch (error: any) {
-      console.error('Error uploading profile picture:', error);
+      console.error('Error in profile picture upload:', error);
       alert('Failed to upload profile picture: ' + error.message);
     } finally {
       setIsUploadingProfile(false);
