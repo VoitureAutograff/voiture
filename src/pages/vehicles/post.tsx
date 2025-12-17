@@ -550,26 +550,14 @@ export default function PostVehicle() {
       logVehiclePosted(result.vehicleId, submitData);
 
       // After successful post, check for matching requirements for this vehicle
-      const vehicleMatchContext = {
+      const matchingRequirements = await checkPartialMatches({
         make: formData.make,
         model: formData.model,
         year: Number(formData.year),
         vehicle_type: formData.vehicle_type,
-      } as const;
-
-      const matchingRequirements = await checkPartialMatches(vehicleMatchContext);
+      });
 
       if (matchingRequirements.length > 0) {
-        // Persist match context so dashboard/home can re‑show popup later
-        if (typeof window !== 'undefined') {
-          const payload = {
-            ...vehicleMatchContext,
-            foundAt: new Date().toISOString(),
-          };
-          console.log('💾 Saving pending vehicle match to localStorage:', payload);
-          localStorage.setItem('pending-vehicle-match', JSON.stringify(payload));
-        }
-
         // Show popup with matches instead of immediately redirecting
         setShowMatchingPopup(true);
         setHasCheckedMatches(true);
@@ -1796,17 +1784,13 @@ export default function PostVehicle() {
 
         <MatchingPopup
           isOpen={showMatchingPopup}
-          onClose={() => {
-            setShowMatchingPopup(false);
-            navigate('/dashboard', { replace: true });
-          }}
+          onClose={() => setShowMatchingPopup(false)}
           onDontShowAgain={() => {
             const key = getVehicleMatchKey();
             if (typeof window !== 'undefined') {
               localStorage.setItem(key, '1');
             }
             setShowMatchingPopup(false);
-            navigate('/dashboard', { replace: true });
           }}
           type="vehicle-matches-requirement"
           vehicleData={{
@@ -1821,3 +1805,4 @@ export default function PostVehicle() {
     </div>
   );
 }
+
