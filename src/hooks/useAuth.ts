@@ -26,12 +26,13 @@ export function useAuth() {
         // Check Supabase auth session
         const { data: { session } } = await supabase.auth.getSession();
         
-        if (session?.user && session.user.email_confirmed_at) {
-          // User is authenticated and email is verified
+        if (session?.user?.email) {
+          const email = session.user.email.toLowerCase();
+
           const { data: userData } = await supabase
             .from('users')
             .select('*')
-            .eq('email', session.user.email)
+            .eq('email', email)
             .eq('status', 'active')
             .single();
 
@@ -66,12 +67,13 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
 
-      if (event === 'SIGNED_IN' && session?.user.email_confirmed_at) {
-        // User signed in and email is verified
+      if (event === 'SIGNED_IN' && session?.user?.email) {
+        const email = session.user.email.toLowerCase();
+
         const { data: userData } = await supabase
           .from('users')
           .select('*')
-          .eq('email', session.user.email)
+          .eq('email', email)
           .eq('status', 'active')
           .single();
 
@@ -95,29 +97,26 @@ export function useAuth() {
     try {
       setLoading(true);
       
-      // Use Supabase Auth - NO FALLBACK
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
-        password: password
+        password,
       });
 
       if (authError) {
         return { data: null, error: authError };
       }
 
-      if (!authData.user) {
+      if (!authData.user?.email) {
         return { data: null, error: new Error('Invalid credentials') };
       }
 
-      if (!authData.user.email_confirmed_at) {
-        return { data: null, error: new Error('Please verify your email before signing in') };
-      }
+      const emailLower = authData.user.email.toLowerCase();
 
       // Get user data from our users table
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email.trim().toLowerCase())
+        .eq('email', emailLower)
         .eq('status', 'active')
         .single();
 
@@ -137,10 +136,33 @@ export function useAuth() {
     }
   };
 
+  const signInWithGoogle = async () => {
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/dashboard'
+        }
+      });
+
+      if (error) {
+        return { data: null, error };
+      }
+
+      return { data, error: null };
+    } catch (error: any) {
+      return { data: null, error };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const signUp = async (
     email: string, 
     password: string, 
-    metadata?: { name: string; phone: string },
+    metadata?: { name: string },
     emailRedirectTo?: string
   ) => {
     try {
@@ -163,8 +185,7 @@ export function useAuth() {
         options: {
           emailRedirectTo: redirectUrl,
           data: {
-            name: metadata.name,
-            phone: metadata.phone
+            name: metadata.name
           }
         }
       });
@@ -180,7 +201,6 @@ export function useAuth() {
           auth_id: authData.user?.id,
           name: metadata.name.trim(),
           email: email.trim().toLowerCase(),
-          phone: metadata.phone?.trim() || null,
           role: 'buyer',
           status: 'pending',
           created_at: new Date().toISOString()
@@ -311,6 +331,7 @@ export function useAuth() {
     loading,
     initialized,
     signIn,
+    signInWithGoogle,
     signUp,
     signOut,
     updateProfile,
@@ -318,3 +339,4 @@ export function useAuth() {
     uploadProfilePicture,
   };
 }
+
