@@ -294,14 +294,14 @@ export function useAuth() {
       }
 
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}.${fileExt}`;
       const filePath = `profile-pictures/${fileName}`;
 
       const { data: _uploadData, error: uploadError } = await supabase.storage
         .from('user-uploads')
         .upload(filePath, file, {
           cacheControl: '3600',
-          upsert: false
+          upsert: true
         });
 
       if (uploadError) {
